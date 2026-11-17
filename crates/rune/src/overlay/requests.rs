@@ -35,6 +35,7 @@ pub(super) struct Requests {
     pub macos_level: Option<isize>,
     pub exclude_from_capture: Option<bool>,
     pub xwayland_input: Option<bool>,
+    pub overlap_panels: Option<bool>,
     /// The `setup` waker fired.
     pub woken: bool,
 }
