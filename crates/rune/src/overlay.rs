@@ -174,6 +174,8 @@ impl<T: 'static> OverlayHandle<T> {
     /// Changes `OverlayOptions::xwayland_input`. It applies when the surface is next made, so
     /// a call before `show` in the same turn covers that show.
     pub fn set_xwayland_input(&self, allow: bool) { self.request(|q| q.xwayland_input = Some(allow)); }
+    /// Changes `OverlayOptions::overlap_panels`. A shown layer-shell surface is remade.
+    pub fn set_overlap_panels(&self, overlap: bool) { self.request(|q| q.overlap_panels = Some(overlap)); }
 
     /// The overlay's frame counts: redraws, presents, failed drawable acquisitions, loop turns
     /// and pacing: current totals, and per-second rates updated once a second while it draws.

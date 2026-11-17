@@ -396,7 +396,9 @@ impl<T: 'static> Overlay<T> {
             #[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]
             if let Some(x11) = &self.x11 { x11.set_follow_pointer(follow); }
         }
-        let options_changed = requests.placement.is_some() || requests.display.is_some();
+        let overlap_changed = requests.overlap_panels.is_some_and(|o| o != self.options.overlap_panels);
+        if let Some(overlap) = requests.overlap_panels { self.options.overlap_panels = overlap; }
+        let options_changed = requests.placement.is_some() || requests.display.is_some() || overlap_changed;
         #[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]
         let recreate_layer = options_changed && matches!(self.surface.live().map(|l| &l.backing), Some(Backing::Layer(_)));
         #[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]

@@ -132,6 +132,10 @@ pub struct OverlayOptions {
     /// can't use it. Read when the surface is made, at each show on Wayland;
     /// `OverlayHandle::set_xwayland_input` changes it.
     pub xwayland_input: bool,
+    /// Wayland layer-shell: sit at the true screen edge over panels and docks that reserve
+    /// space (exclusive zone -1), instead of being moved clear of them. Off by default.
+    /// `OverlayHandle::set_overlap_panels` changes it.
+    pub overlap_panels: bool,
 }
 
 /// Keeps existing exhaustive `OverlaySpec` literals source compatible.

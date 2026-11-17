@@ -34,6 +34,7 @@ pub(super) struct Requests<T> {
     pub macos_level: Option<isize>,
     pub exclude_from_capture: Option<bool>,
     pub xwayland_input: Option<bool>,
+    pub overlap_panels: Option<bool>,
     /// The `setup` waker fired.
     pub woken: bool,
     pub updates: Vec<Update<T>>,
@@ -43,7 +44,7 @@ impl<T> Default for Requests<T> {
     fn default() -> Self {
         Requests {
             input: None, follow_pointer: None, placement: None, display: None, request_keys: false, refollow: false, visibility: None, edge: None,
-            margin: None, align: None, size: None, macos_level: None, exclude_from_capture: None, xwayland_input: None, woken: false, updates: Vec::new(),
+            margin: None, align: None, size: None, macos_level: None, exclude_from_capture: None, xwayland_input: None, overlap_panels: None, woken: false, updates: Vec::new(),
         }
     }
 }
