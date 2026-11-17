@@ -173,9 +173,13 @@ impl Dispatch<WlKeyboard, ()> for State {
                 state.input.push(Input::Physical(crate::PhysicalInput::FocusLost, None));
             }
             wl_keyboard::Event::Keymap { format: wayland_client::WEnum::Value(wl_keyboard::KeymapFormat::XkbV1), fd, size } => {
-                use std::io::Read;
-                let mut map = String::new();
-                if size <= 16 * 1024 * 1024 && std::fs::File::from(fd).take(u64::from(size)).read_to_string(&mut map).is_ok() {
+                use std::os::unix::fs::FileExt;
+                // Compositors (KWin) hand every client the same open keymap file: read at offset 0,
+                // as an mmap would, since a plain read starts wherever an earlier reader left it.
+                let mut map = vec![0; size.min(16 * 1024 * 1024) as usize];
+                if size <= 16 * 1024 * 1024 && std::fs::File::from(fd).read_exact_at(&mut map, 0).is_ok()
+                    && let Ok(map) = String::from_utf8(map)
+                {
                     let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
                     state.xkb = xkb::Keymap::new_from_string(&context, map.trim_end_matches('\0').to_owned(), xkb::KEYMAP_FORMAT_TEXT_V1, xkb::COMPILE_NO_FLAGS).map(|map| xkb::State::new(&map));
                 }
