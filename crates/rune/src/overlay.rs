@@ -164,6 +164,7 @@ impl SharedCore {
     fn capabilities(&self) -> crate::OverlayCapabilities { self.native.lock().unwrap().1 }
     fn set_exclude_from_capture(&self, exclude: bool) { self.request(|q| q.exclude_from_capture = Some(exclude)); }
     fn set_xwayland_input(&self, allow: bool) { self.request(|q| q.xwayland_input = Some(allow)); }
+    fn set_overlap_panels(&self, overlap: bool) { self.request(|q| q.overlap_panels = Some(overlap)); }
     fn surface_stats(&self) -> crate::SurfaceStats { crate::frame::surface_stats::read(&self.stats) }
     fn show(&self) { self.request(|q| q.visibility = Some(Visibility::Show(Duration::ZERO))); }
     fn hide(&self) { self.request(|q| q.visibility = Some(Visibility::Hide(Duration::ZERO))); }
@@ -256,6 +257,9 @@ impl<T: 'static> OverlayHandle<T> {
     /// a call before `show` in the same turn covers that show.
     #[inline(always)]
     pub fn set_xwayland_input(&self, allow: bool) { self.shared.core.set_xwayland_input(allow); }
+    /// Changes `OverlayOptions::overlap_panels`. A shown layer-shell surface is re-placed.
+    #[inline(always)]
+    pub fn set_overlap_panels(&self, overlap: bool) { self.shared.core.set_overlap_panels(overlap); }
 
     /// The overlay's frame counts: redraws, presents, failed drawable acquisitions, loop turns
     /// and pacing: current totals, and per-second rates updated once a second while it draws.

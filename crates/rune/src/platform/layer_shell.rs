@@ -927,8 +927,12 @@ impl LayerSurface {
         self.options.placement = placement;
     }
 
+    pub fn set_overlap_panels(&mut self, overlap: bool) {
+        self.options.overlap_panels = overlap;
+    }
+
     pub fn place(&mut self, at: Placement) {
-        self.layer.set_exclusive_zone(exclusive_zone(self.options.placement));
+        self.layer.set_exclusive_zone(if self.options.overlap_panels { -1 } else { exclusive_zone(self.options.placement) });
         match self.options.placement {
             Some(OverlayPlacement::FullScreen) => {
                 self.layer.set_size(0, 0);
