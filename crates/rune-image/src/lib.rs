@@ -31,6 +31,8 @@ pub use app_icon::app_icon_rgba;
 #[cfg(not(target_arch = "wasm32"))]
 #[doc(hidden)]
 pub use from_url::font_file;
+#[doc(hidden)]
+pub use from_url::file_path;
 pub use pixels::Pixels;
 pub use place::Align;
 pub use place::SurfaceFit;

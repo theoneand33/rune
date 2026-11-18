@@ -1,7 +1,8 @@
 //! A Wayland layer-shell surface for overlays: `zwlr_layer_shell_v1` on winit's own display
 //! connection, in a private event queue with its own seat. The surface reserves no space;
 //! input regions and the rendered buffer share a commit. Global pointer observation and
-//! capture exclusion are unavailable. wgpu draws through the raw `wl_surface`.
+//! capture exclusion are unavailable. wgpu draws through the raw `wl_surface`. Drag and drop
+//! goes through the seat's data device (`dnd`).
 
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::ptr::NonNull;
@@ -25,6 +26,9 @@ use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::{Layer,
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{self, Anchor, KeyboardInteractivity, ZwlrLayerSurfaceV1};
 
 use super::layer_shell_machine::{configure_wait, connection, exclusive_zone, frame_callback, keyboard, pointer, readiness, repeat, touch, watch_loop};
+
+mod dnd;
+pub(crate) use dnd::FileInput;
 use crate::el::Align;
 use crate::overlay::{Placement, ScreenEdge};
 use crate::runtime::Waker;
@@ -39,6 +43,7 @@ pub(crate) enum Input {
     Wheel(crate::input::host_events::WheelInput),
     Focus(bool), Key(crate::KeyEvent), KeyRepeat(crate::KeyEvent), KeyUp(crate::KeyEvent),
     Physical(crate::PhysicalInput, Option<crate::KeyEvent>),
+    Files(FileInput),
 }
 
 /// Whether the pointer is over the surface: the serial of its enter, which setting a cursor
@@ -83,6 +88,7 @@ struct State {
     mod_state: Option<keyboard::ModState>,
     repeat_seq: crate::machine::Seq,
     repeat: repeat::State,
+    dnd: dnd::Dnd,
 }
 
 impl Dispatch<WlOutput, ()> for State {
@@ -227,10 +233,11 @@ impl Dispatch<WlPointer, ()> for State {
                 state.step_pointer(pointer::Event::Reset);
                 state.input.push(Input::Leave);
             }
-            wl_pointer::Event::Button { button, state: wayland_client::WEnum::Value(button_state), .. } if state.over.inside() => {
+            wl_pointer::Event::Button { serial, button, state: wayland_client::WEnum::Value(button_state), .. } if state.over.inside() => {
                 let pressed = button_state == wl_pointer::ButtonState::Pressed;
                 match pointer::button_from_linux(button) {
                     crate::PointerButton::Primary => {
+                        state.dnd.press = pressed.then_some(serial);
                         state.input.push(Input::Button(pressed));
                         if pressed && let Some(xkb) = &state.xkb {
                             state.input.push(Input::Physical(crate::PhysicalInput::Modifiers(key_mods(xkb)), None));
@@ -904,7 +911,9 @@ impl LayerSurface {
         let layer = shell.get_layer_surface(&surface, output.as_ref(), Layer::Overlay, namespace.to_owned(), &qh, ());
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
         let shapes = globals.bind::<WpCursorShapeManagerV1, _, _>(&qh, 1..=1, ()).ok();
-        let state = State { surface: Some(surface.clone()), want_pointer, want_keys, shapes, ..State::default() };
+        let dnd = dnd::Dnd::new(globals.bind(&qh, 3..=3, ()).ok(), globals.bind(&qh, 1..=1, ()).ok(), wake.clone());
+        let mut state = State { surface: Some(surface.clone()), want_pointer, want_keys, shapes, dnd, ..State::default() };
+        if let Some(seat) = &seat { state.dnd.attach(seat, &qh); }
         let mut this = LayerSurface { namespace: namespace.to_owned(), conn, registry, seat_global, regions: std::cell::RefCell::new(Some(Vec::new())), compositor, output, seat, options: options.clone(), queue, state, layer, surface, display: display.display, watch: None };
         this.place(at);
         this.surface.commit();
@@ -1004,7 +1013,21 @@ impl LayerSurface {
         if self.seat.is_none() && self.state.want_pointer {
             self.seat = self.seat_global.map(|(name, version)| self.registry.bind(name, version, &self.queue.handle(), ()));
         }
-        if let Some(seat) = &self.seat { self.state.update_seat(seat, &self.queue.handle()); }
+        if let Some(seat) = &self.seat {
+            self.state.update_seat(seat, &self.queue.handle());
+            self.state.dnd.attach(seat, &self.queue.handle());
+        }
+    }
+
+    /// Whether this surface starts OS drags: the compositor has a data device for its seat.
+    pub fn drags_out(&self) -> bool { self.state.dnd.drags_out() }
+
+    /// Starts the drag a pointer move asked for; `done` runs once it ends. `scale` is the
+    /// surface's, for the drag icon.
+    pub fn start_drag(&mut self, start: crate::drag_out::DragOutStart, picture: Option<crate::drag_out::DragImage>, scale: i32, done: Box<dyn FnOnce(crate::DragOutcome)>) {
+        let qh = self.queue.handle();
+        self.state.dnd.start(&qh, &self.compositor, &self.surface, scale, start, picture, done);
+        let _ = self.queue.flush();
     }
 
     pub fn request_keys(&self) -> bool {
@@ -1103,6 +1126,7 @@ impl LayerSurface {
             return;
         }
         let dispatch_err = self.queue.dispatch_pending(&mut self.state).err();
+        self.state.dnd.poll(&mut self.state.input);
         let flush_err = self.queue.flush().err();
         let last_err = self.conn.backend().last_error();
         let (kind, reason) = classify_turn_error(dispatch_err, flush_err, last_err);
@@ -1150,6 +1174,7 @@ impl Drop for LayerSurface {
     fn drop(&mut self) {
         // Stop and join the reader thread before destroying proxies or dropping winit's display.
         self.watch = None;
+        self.state.dnd.destroy();
         if let Some(shape) = self.state.shape.take() { shape.destroy(); }
         if let Some(shapes) = self.state.shapes.take() { shapes.destroy(); }
         if let Some(pointer) = self.state.pointer.take() && pointer.version() >= 3 { pointer.release(); }
