@@ -180,3 +180,16 @@ fn snapshot_unpremultiplies_correctly_on_srgb_and_unorm_targets() {
         assert!(px[3].abs_diff(expected_a) <= 1, "{format:?}: alpha got {}, expected {expected_a}", px[3]);
     }
 }
+
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]
+#[test]
+fn file_drags_travel_as_a_uri_list() {
+    let paths = [PathBuf::from("/home/me/Report final.pdf"), PathBuf::from("/tmp/100%~ü.txt")];
+    let list = uri_list(&paths);
+    assert_eq!(list, "file:///home/me/Report%20final.pdf\r\nfile:///tmp/100%25~%C3%BC.txt\r\n");
+    assert_eq!(uri_list_paths(&list), paths);
+    let foreign = "# a comment\r\n日本語\r\nhttps://example.com/a.png\r\nFILE://localhost/srv/a%20b\nfile:///bad%ff\n";
+    assert_eq!(uri_list_paths(foreign), [PathBuf::from("/srv/a b")]);
+    let offered: Vec<_> = mime_data(&DragItem::new().file("/a")).into_iter().map(|(m, _)| m).collect();
+    assert_eq!(offered, ["text/uri-list", "text/plain;charset=utf-8", "UTF8_STRING", "text/plain"]);
+}

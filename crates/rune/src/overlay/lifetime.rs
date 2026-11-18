@@ -280,6 +280,7 @@ impl OverlayCore {
             capture_exclusion: OverlaySupport::Unsupported, global_pointer: OverlaySupport::Unsupported,
             nonactivating_keys: if layer.supports_keys() { OverlaySupport::Supported } else { OverlaySupport::Unsupported },
         };
+        app.rt_mut().set_os_drag(layer.drags_out());
         self.attach(app, Backing::Layer(layer), scale as f32)
     }
 
