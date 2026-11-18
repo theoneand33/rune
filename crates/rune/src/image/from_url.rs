@@ -120,7 +120,7 @@ async fn browser_reply(url: &str, promise: js_sys::Promise) -> Result<Fetched, I
 
 /// The file a native `url` names: a path with no scheme, or a `file:` URL.
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-pub(super) fn file_path(url: &str) -> Result<std::path::PathBuf, ImageError> {
+pub(crate) fn file_path(url: &str) -> Result<std::path::PathBuf, ImageError> {
     let scheme = url.split_once(':').map(|(s, _)| s)
         // A one-letter "scheme" is a Windows drive.
         .filter(|s| s.len() > 1 && s.starts_with(|c: char| c.is_ascii_alphabetic())

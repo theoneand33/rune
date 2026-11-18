@@ -494,11 +494,12 @@ impl<S: 'static> Host<S> {
                     let image = self.gpu.as_ref().filter(|_| start.item.drag_image().is_none()).and_then(|(gpu, renderer)|
                         crate::drag_out::snapshot(gpu, renderer, (l.config.width, l.config.height), scale, rt.clear_color(), start.rect));
                     let (sink, path) = (rt.drag_end_sink(), start.path.clone());
-                    let handle = self.native_handle.clone();
+                    let (handle, waker) = (self.native_handle.clone(), self.native_handle.clone());
+                    let wake: crate::Waker = Arc::new(move || waker.send(WakeEvent::App));
                     crate::drag_out::begin(&l.window, start, image, Box::new(move |outcome| {
                         sink.borrow_mut().push((path, outcome));
                         handle.send(WakeEvent::App);
-                    }));
+                    }), Some(wake));
                     l.apply_cursor(rt, false);
                 }
                 l.request_redraw();
