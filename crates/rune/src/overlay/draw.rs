@@ -29,7 +29,20 @@ impl<T: 'static> Overlay<T> {
     fn surface_input(&mut self, input: crate::platform::layer_shell::Input) {
         use crate::platform::layer_shell::Input;
         match input {
-            Input::Move(x, y) => { self.dirty |= self.rt.observe_pointer(x, y); return; }
+            Input::Move(x, y) => {
+                self.dirty |= self.rt.observe_pointer(x, y);
+                self.begin_drag_out();
+                return;
+            }
+            Input::Files(files) => {
+                use crate::platform::layer_shell::FileInput;
+                match files {
+                    FileInput::Hover(paths, x, y) => self.rt.drag_files(paths, Some((x, y))),
+                    FileInput::Move(x, y) => { self.dirty |= self.rt.drag_files_to(Some((x, y))); return; }
+                    FileInput::Leave => self.rt.drag_files_leave(),
+                    FileInput::Drop(paths, x, y) => self.rt.drop_files(paths, Some((x, y))),
+                }
+            }
             Input::Leave => self.rt.pointer_leave(),
             Input::Button(down) => if let Some((x, y)) = self.rt.pointer() {
                 if down { self.rt.pointer_down(x, y); } else { self.rt.pointer_up(x, y); }

@@ -734,6 +734,8 @@ use mips::mip_chain;
 use mips::byte;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use from_url::font_file;
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]
+pub(crate) use from_url::file_path;
 
 #[cfg(test)]
 mod mip_tests;

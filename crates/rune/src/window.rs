@@ -369,6 +369,7 @@ impl ApplicationHandler<WakeEvent> for Windows {
     }
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: WakeEvent) {
         let _handling = crate::quit::handling();
+        crate::drag_out::settle();
         let slot = match &event {
             WakeEvent::DisplayTick(i) | WakeEvent::App(i) | WakeEvent::Live(i) | WakeEvent::Window(i, _) | WakeEvent::Focus(i)
                 | WakeEvent::Position(i, _) | WakeEvent::Level(i, _) | WakeEvent::Place(i, _) | WakeEvent::Frame(i, _)
@@ -620,7 +621,8 @@ impl<S: 'static> Host<S> {
         rt.trace_channels = args.trace.as_ref().map(|_| Default::default());
         rt.set_live_waker(Arc::new(move || { let _ = live_proxy.send_event(WakeEvent::Live(slot)); }));
         rt.set_live_visible(false);
-        rt.set_os_drag(crate::drag_out::SUPPORTED);
+        // A Wayland window's seat is winit's, which starts no drags.
+        rt.set_os_drag(crate::drag_out::SUPPORTED && !(wayland && cfg!(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))));
         rt.transparent = options.transparent;
         rt.track_marks = comp.is_some();
         rt.wall_start = Some(Instant::now());
