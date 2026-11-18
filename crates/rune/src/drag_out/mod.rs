@@ -10,9 +10,9 @@
 //! [`DragOutcome::Cancelled`] and the image slides back.
 //!
 //! macOS runs the session with `NSDraggingSource`, Windows with OLE's `DoDragDrop` and the shell's
-//! drag image (`windows`). Wayland and X11 don't start one yet: there `drag_out` is ignored and the
-//! element keeps its ordinary press and `on_drag` behaviour; their backends slot in behind the
-//! same types.
+//! drag image (`windows`), X11 windows with XDND (`x11`), and Wayland layer-shell overlays with
+//! `wl_data_device` (`platform::layer_shell`). An ordinary Wayland window doesn't start one yet:
+//! there `drag_out` is ignored and the element keeps its ordinary press and `on_drag` behaviour.
 //!
 //! Windows start the session from the mouse-dragged event AppKit is delivering. Overlay panels
 //! track the pointer by polling, so there may be no such event; the overlay then builds a
@@ -27,9 +27,12 @@ use std::path::{Path, PathBuf};
 mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]
+mod x11;
 
 /// Whether this platform's windows start OS drag sessions.
-pub(crate) const SUPPORTED: bool = cfg!(any(target_os = "macos", target_os = "windows"));
+/// On Linux and the BSDs only X11 windows and layer-shell overlays do; their hosts say which.
+pub(crate) const SUPPORTED: bool = cfg!(any(target_os = "macos", target_os = "windows", all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))));
 
 /// Pointer travel (points, straight-line) from the press before a drag session starts.
 /// AppKit views commonly use 4; GTK's default is 8; Windows' `SM_CXDRAG` is 4 pixels.
@@ -391,19 +394,29 @@ fn to_straight_rgba(pixels: &mut [u8], bgra: bool, srgb_target: bool) {
 
 /// Starts the OS drag session for `start` from inside the pointer event that crossed the
 /// threshold. `done` runs once with how it ended (also when it couldn't start: `Cancelled`).
+/// `wake` turns the event loop when a session that ends off the main thread (X11) has ended.
 #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(unused_variables))]
-pub(crate) fn begin(window: &winit::window::Window, start: DragOutStart, snapshot: Option<DragImage>, done: Box<dyn FnOnce(DragOutcome)>) {
+pub(crate) fn begin(window: &winit::window::Window, start: DragOutStart, snapshot: Option<DragImage>, done: Box<dyn FnOnce(DragOutcome)>, wake: Option<crate::Waker>) {
     #[cfg(target_os = "macos")]
     { let picture = picture(&start.item, snapshot); macos::begin(window, start, picture, done); }
     #[cfg(target_os = "windows")]
     { let picture = picture(&start.item, snapshot); windows::begin(window, start, picture, done); }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]
+    x11::begin(window, start, done, wake);
+    #[cfg(not(any(target_os = "macos", target_os = "windows", all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))))]
     done(DragOutcome::Cancelled);
 }
 
+/// Runs the `done` of each session that ended off the main thread. The event loop calls it
+/// before handling a wake.
+pub(crate) fn settle() {
+    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]
+    x11::settle();
+}
+
 /// The item's own image, else the snapshot, over the item's backing colour if it has one.
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
-fn picture(item: &DragItem, snapshot: Option<DragImage>) -> Option<DragImage> {
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows", all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))), allow(dead_code))]
+pub(crate) fn picture(item: &DragItem, snapshot: Option<DragImage>) -> Option<DragImage> {
     let picture = item.drag_image().cloned().or(snapshot)?;
     match item.backing() {
         Some(backing) => picture.over(backing).or(Some(picture)),
@@ -412,8 +425,49 @@ fn picture(item: &DragItem, snapshot: Option<DragImage>) -> Option<DragImage> {
 }
 
 /// The path offered as text when a file drag has no text of its own.
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows", all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))), allow(dead_code))]
 fn path_text(path: &Path) -> String { path.to_string_lossy().into_owned() }
+
+/// What a drag offers on X11 and Wayland, by MIME type: files as a `text/uri-list`, text (the
+/// item's own, else the paths, a line each) and PNG data.
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]
+pub(crate) fn mime_data(item: &DragItem) -> Vec<(&'static str, std::sync::Arc<[u8]>)> {
+    let mut out: Vec<(&'static str, std::sync::Arc<[u8]>)> = Vec::new();
+    if !item.paths().is_empty() { out.push(("text/uri-list", uri_list(item.paths()).into_bytes().into())); }
+    let text = item.plain_text().map(str::to_owned)
+        .or_else(|| (!item.paths().is_empty()).then(|| item.paths().iter().map(|p| path_text(p)).collect::<Vec<_>>().join("\n")));
+    if let Some(text) = text {
+        let text: std::sync::Arc<[u8]> = text.into_bytes().into();
+        for mime in ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain"] { out.push((mime, text.clone())); }
+    }
+    if let Some(png) = item.png_data() { out.push(("image/png", png.into())); }
+    out
+}
+
+/// `paths` as a `text/uri-list` (RFC 2483): a percent-encoded `file://` URL a line, each ending
+/// in CRLF.
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]
+pub(crate) fn uri_list(paths: &[PathBuf]) -> String {
+    use std::fmt::Write;
+    use std::os::unix::ffi::OsStrExt;
+    let mut out = String::new();
+    for path in paths {
+        out.push_str("file://");
+        for &b in path.as_os_str().as_bytes() {
+            if b.is_ascii_alphanumeric() || b"/-._~".contains(&b) { out.push(b as char) } else { let _ = write!(out, "%{b:02X}"); }
+        }
+        out.push_str("\r\n");
+    }
+    out
+}
+
+/// The local files a `text/uri-list` names. Comments, other schemes and URLs that aren't UTF-8
+/// once decoded are skipped.
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android")))]
+pub(crate) fn uri_list_paths(list: &str) -> Vec<PathBuf> {
+    list.lines().map(str::trim).filter(|l| l.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("file:")))
+        .filter_map(|l| crate::image::file_path(l).ok()).collect()
+}
 
 #[cfg(test)]
 mod tests;

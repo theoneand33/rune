@@ -483,7 +483,19 @@ impl OverlayCore {
             Input::Move(x, y) => {
                 let zoom = app.rt().zoom();
                 self.dirty |= app.observe_pointer(x / zoom, y / zoom);
+                self.begin_drag_out(app.rt_mut());
                 return;
+            }
+            Input::Files(files) => {
+                use crate::platform::layer_shell::FileInput;
+                let zoom = app.rt().zoom();
+                let rt = app.rt_mut();
+                match files {
+                    FileInput::Hover(paths, x, y) => rt.drag_files(paths, Some((x / zoom, y / zoom))),
+                    FileInput::Move(x, y) => { self.dirty |= rt.drag_files_to(Some((x / zoom, y / zoom))); return; }
+                    FileInput::Leave => rt.drag_files_leave(),
+                    FileInput::Drop(paths, x, y) => rt.drop_files(paths, Some((x / zoom, y / zoom))),
+                }
             }
             Input::Leave => app.rt_mut().pointer_leave(),
             Input::Button(down) => if let Some((x, y)) = app.rt().pointer() {
