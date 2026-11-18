@@ -1,0 +1,1 @@
+- Linux drag and drop: a Wayland layer-shell overlay takes file drops (`on_drop_files`, `on_drop_hover`) through its seat's `wl_data_device`, and starts `drag_out` sessions there with the element's picture as the drag icon. X11 windows (and XWayland ones) start `drag_out` sessions over XDND, without a drag image yet. Ordinary Wayland windows still ignore `drag_out`.

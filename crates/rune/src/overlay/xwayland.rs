@@ -16,6 +16,8 @@ impl<T: 'static> Overlay<T> {
         self.shared.native.lock().unwrap().1 = crate::OverlayCapabilities {
             capture_exclusion: OverlaySupport::Unsupported, global_pointer: OverlaySupport::Unsupported, nonactivating_keys: OverlaySupport::Unsupported,
         };
+        // Its X window isn't winit's, so nothing starts a drag from it.
+        self.rt.set_os_drag(false);
         self.attach(Backing::Xwayland(surface), scale)
     }
 
