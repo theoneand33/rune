@@ -106,6 +106,12 @@ impl Native {
                 let setup = tokio::time::timeout(RPC_TIMEOUT, async {
                     // No session bus means this desktop cannot supply the portal.
                     let conn = Connection::session().await.map_err(|_| ShortcutError::Unsupported)?;
+                    // xdg-desktop-portal 1.21+ gives GlobalShortcuts only to a host app that registered its
+                    // app id first on this connection. Older portals and sandboxed apps refuse it harmlessly.
+                    if let Some(app) = crate::tooling::app_id() {
+                        let options: HashMap<&str, Variant> = HashMap::new();
+                        let _ = conn.call_method(Some(DEST), PATH, Some("org.freedesktop.host.portal.Registry"), "Register", &(app, options)).await;
+                    }
                     let portal = Proxy::new(&conn, DEST, PATH, INTERFACE).await.map_err(dbus_error)?;
                     // Some portal frontends report InvalidArgs rather than UnknownInterface
                     // when a backend for this interface is absent. The property is fixed here.
