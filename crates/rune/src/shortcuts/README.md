@@ -71,6 +71,10 @@ even if other threads retain `AppHandle`s.
   is `PermissionDenied`, not `Conflict`. Each shortcut owns a portal session so
   unregister also works with version 1. The activation token is available only
   during its handler, through `Tx::activation_token()`.
+  Portal 1.21+ needs the app id: Rune registers `set_app_id` (reverse-DNS, matching
+  an installed `.desktop` file; GNOME refuses other ids) before its first portal call.
+  An XWayland window in a Wayland session (`XDG_SESSION_TYPE=wayland`) uses the
+  portal too, and falls back to the X11 grab when there is no portal.
 
 Registration is synchronous, including portal consent, with a two-minute bound.
 Register startup shortcuts before showing windows; use a worker thread for
