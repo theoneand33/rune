@@ -44,8 +44,13 @@ impl<S: 'static> Host<S> {
         // Windows opens it hidden, then shows it cloaked until its first frame lands
         // (`Cloak`), so it never comes on screen empty. The show doesn't activate it: the cloak
         // does as it lifts, so the text services' start-up follows the frame.
+        // A transparent window drops its redirection bitmap, as an overlay does: DirectComposition
+        // draws it (`Gpu::instance`), and the bitmap under it painted the clear pixels gray.
         #[cfg(target_os = "windows")]
-        let attrs = crate::platform::app_icon::with_icon(winit::platform::windows::WindowAttributesExtWindows::with_drag_and_drop(attrs.with_visible(false).with_active(false), false));
+        let attrs = crate::platform::app_icon::with_icon(winit::platform::windows::WindowAttributesExtWindows::with_no_redirection_bitmap(
+            winit::platform::windows::WindowAttributesExtWindows::with_drag_and_drop(attrs.with_visible(false).with_active(false), false),
+            self.options.transparent,
+        ));
         let window = Arc::new(event_loop.create_window(attrs).map_err(|e| e.to_string())?);
         crate::marks::mark("window.native");
         #[cfg(target_os = "windows")]
