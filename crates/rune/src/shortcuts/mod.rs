@@ -75,12 +75,21 @@ fn backend(wayland: bool, sink: Sink) -> Result<NativeBackend, ShortcutError> {
     #[cfg(target_os = "windows")]
     return Ok(Box::new(windows::Native::new(sink)?));
     #[cfg(target_os = "linux")]
-    return if wayland {
+    {
+        // An XWayland window in a Wayland session tries the portal first: its X11 grab fires
+        // only while an X11 window has focus. With no portal it falls back to that grab.
         #[cfg(feature = "dbus")]
-        { Ok(Box::new(wayland::Native::new(sink)?)) }
+        if wayland || std::env::var_os("XDG_SESSION_TYPE").is_some_and(|t| t == "wayland") {
+            match wayland::Native::new(sink.clone()) {
+                Ok(native) => return Ok(Box::new(native)),
+                Err(e) if wayland => return Err(e),
+                Err(_) => {}
+            }
+        }
         #[cfg(not(feature = "dbus"))]
-        { Err(ShortcutError::Unsupported) }
-    } else { Ok(Box::new(x11::Native::new(sink)?)) };
+        if wayland { return Err(ShortcutError::Unsupported) }
+        return Ok(Box::new(x11::Native::new(sink)?));
+    }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     { let _ = sink; Err(ShortcutError::Unsupported) }
 }
